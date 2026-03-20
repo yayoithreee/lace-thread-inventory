@@ -120,7 +120,6 @@
         <option value="daruma_murasaki">ダルマ紫野</option>
         <option value="olympus_tatting">オリムパス タティング(中)</option>
         <option value="olympus_tatting_lame">オリムパス タティング(ラメ)</option>
-        <option value="lizbeth_tatting">リズベス タティング</option>
         <option value="lizbeth_20">リズベス 20番</option>
         <option value="other">その他</option>
       </select>
@@ -156,7 +155,6 @@ const BRANDS = {
   daruma_murasaki: { name:'ダルマ紫野', short:'紫野' },
   olympus_tatting: { name:'オリムパス タティングレース糸(中)', short:'タティング中' },
   olympus_tatting_lame: { name:'オリムパス タティングレース糸(ラメ)', short:'タティングラメ' },
-  lizbeth_tatting: { name:'リズベス タティングレース糸', short:'リズベスT' },
   lizbeth_20: { name:'リズベス 20番', short:'リズベス20' },
 };
 
@@ -228,10 +226,17 @@ const OLY_LAME_IMG = {
   'T419':'4ad17c7e6e05fb5a4a55829349714b98184146ea','T420':'fba63ffd423b4bd02c1d545e36388c026b9de5b0',
 };
 
+// Kinpyo colors with different date paths
+const KINPYO_DATE_2022 = new Set(['165','244','283','289','342','343','484','486','582','656']);
+const KINPYO_DATE_2026 = new Set(['126','132','134','254','307','519']);
+
 function getImageUrl(thread) {
   const b = thread.brand, n = thread.number;
   if (b === 'olympus_kinpyo' && OLY_KINPYO_IMG[n]) {
-    return `https://www.olympus-thread.com/datas/images/2020/12/15/${OLY_KINPYO_IMG[n]}.jpg`;
+    let datePath = '2020/12/15';
+    if (KINPYO_DATE_2022.has(n)) datePath = '2020/12/22';
+    if (KINPYO_DATE_2026.has(n)) datePath = '2026/01/22';
+    return `https://www.olympus-thread.com/datas/images/${datePath}/${OLY_KINPYO_IMG[n]}.jpg`;
   }
   if (b === 'olympus_tatting' && OLY_TAT_IMG[n]) {
     return `https://www.olympus-thread.com/datas/images/2020/04/20/${OLY_TAT_IMG[n]}.jpg`;
@@ -254,7 +259,7 @@ function getProductPageUrl(thread) {
   if (b === 'daruma_murasaki') return 'https://www.daruma-ito.co.jp/products/01-2340S.php';
   if (b === 'olympus_tatting') return 'https://www.olympus-thread.com/lineup/tatting_lace_yarn/454/';
   if (b === 'olympus_tatting_lame') return 'https://www.olympus-thread.com/lineup/tatting_lace_yarn/456/';
-  if (b === 'lizbeth_20' || b === 'lizbeth_tatting') return 'https://hhtatting.com/product-category/threads/lizbeth/';
+  if (b === 'lizbeth_20') return 'https://hhtatting.com/product-category/threads/lizbeth/';
   return null;
 }
 
@@ -406,7 +411,7 @@ let selectedThread = null;
 let activeBrands = new Set(Object.keys(BRANDS));
 
 function init() {
-  const saved = localStorage.getItem('lace_thread_inventory_v2');
+  const saved = localStorage.getItem('lace_thread_inventory_v3');
   if (saved) {
     try { threads = JSON.parse(saved); } catch(e) { threads = structuredClone(DEFAULT_THREADS); }
   } else {
@@ -416,7 +421,7 @@ function init() {
   render();
 }
 
-function save() { localStorage.setItem('lace_thread_inventory_v2', JSON.stringify(threads)); }
+function save() { localStorage.setItem('lace_thread_inventory_v3', JSON.stringify(threads)); }
 
 function renderBrandPills() {
   const c = document.getElementById('brandPills');
