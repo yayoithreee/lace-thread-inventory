@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>レース糸 在庫管理</title>
+<style>
+  :root {
+    --bg: #f8f6f3; --card-bg: #fff; --text: #333; --text-light: #888;
+    --border: #e0ddd8; --accent: #8b6f5e; --owned: #4a9; --not-owned: #ccc;
+    --header-bg: #f0ebe5;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Segoe UI','Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif; background:var(--bg); color:var(--text); line-height:1.5; }
+
+  header { background:var(--header-bg); border-bottom:1px solid var(--border); padding:14px 20px; position:sticky; top:0; z-index:100; }
+  header h1 { font-size:20px; font-weight:600; color:var(--accent); margin-bottom:8px; }
+  .controls { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .controls input[type="text"] { padding:6px 12px; border:1px solid var(--border); border-radius:6px; font-size:14px; width:200px; outline:none; }
+  .controls input[type="text"]:focus { border-color:var(--accent); }
+  .controls select, .controls button { padding:6px 12px; border:1px solid var(--border); border-radius:6px; font-size:14px; background:#fff; cursor:pointer; }
+  .controls button { background:var(--accent); color:#fff; border:none; font-weight:500; }
+  .controls button:hover { opacity:.85; }
+  .filter-pills { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .pill { padding:4px 12px; border-radius:20px; font-size:12px; border:1px solid var(--border); background:#fff; cursor:pointer; transition:.15s; }
+  .pill.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+
+  .stats-bar { display:flex; gap:16px; padding:10px 20px; background:#fff; border-bottom:1px solid var(--border); font-size:13px; flex-wrap:wrap; }
+  .stat { display:flex; align-items:center; gap:4px; }
+  .stat-dot { width:10px; height:10px; border-radius:50%; }
+
+  main { padding:20px; max-width:1400px; margin:0 auto; }
+  .brand-section { margin-bottom:32px; }
+  .brand-header { display:flex; align-items:center; gap:12px; margin-bottom:12px; padding-bottom:6px; border-bottom:2px solid var(--accent); }
+  .brand-header h2 { font-size:17px; font-weight:600; color:var(--accent); }
+  .brand-header .count { font-size:13px; color:var(--text-light); background:var(--header-bg); padding:2px 10px; border-radius:12px; }
+
+  .thread-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
+  .thread-card { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; overflow:hidden; cursor:pointer; transition:.12s; position:relative; }
+  .thread-card:hover { transform:translateY(-2px); box-shadow:0 4px 12px rgba(0,0,0,.08); }
+  .thread-card.not-owned { opacity:.4; }
+  .thread-card.not-owned:hover { opacity:.7; }
+
+  .swatch { height:110px; width:100%; position:relative; background-size:cover; background-position:center; }
+  .swatch img { width:100%; height:100%; object-fit:cover; display:block; }
+  .swatch .hex-fallback { width:100%; height:100%; }
+  .swatch.lame::after { content:'✨'; position:absolute; top:4px; left:6px; font-size:14px; }
+
+  .owned-badge { position:absolute; top:6px; right:6px; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:14px; color:#fff; font-weight:bold; box-shadow:0 1px 3px rgba(0,0,0,.3); }
+  .owned-badge.yes { background:var(--owned); }
+  .owned-badge.no { background:var(--not-owned); }
+
+  .thread-info { padding:8px 10px; }
+  .thread-info .number { font-weight:700; font-size:15px; }
+  .thread-info .name { font-size:11px; color:var(--text-light); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* Add form */
+  .add-form { display:none; background:#fff; border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:20px; }
+  .add-form.active { display:block; }
+  .add-form h3 { margin-bottom:12px; }
+  .form-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+  .form-row input,.form-row select { padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:14px; }
+  .form-row input[type="color"] { height:34px; width:50px; padding:2px; }
+
+  /* Modal */
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:200; justify-content:center; align-items:center; }
+  .modal-overlay.active { display:flex; }
+  .modal { background:#fff; border-radius:14px; padding:24px; max-width:420px; width:92%; box-shadow:0 8px 32px rgba(0,0,0,.15); max-height:90vh; overflow-y:auto; }
+  .modal h3 { margin-bottom:10px; font-size:16px; }
+  .modal .swatch-large { width:100%; height:180px; border-radius:8px; margin-bottom:12px; overflow:hidden; background-size:cover; background-position:center; }
+  .modal .swatch-large img { width:100%; height:100%; object-fit:cover; }
+  .modal .detail { margin-bottom:5px; font-size:14px; }
+  .modal .detail span { font-weight:600; }
+  .modal .btn-row { display:flex; gap:8px; margin-top:16px; }
+  .modal button { flex:1; padding:10px; border-radius:8px; font-size:14px; font-weight:500; border:1px solid var(--border); cursor:pointer; }
+  .modal .btn-primary { background:var(--accent); color:#fff; border:none; }
+  .modal .btn-danger { background:#d9534f; color:#fff; border:none; }
+  .modal .btn-close { background:#fff; }
+  .modal .product-link { display:inline-block; margin-top:8px; color:var(--accent); font-size:13px; text-decoration:underline; }
+
+  @media(max-width:600px) {
+    .thread-grid { grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px; }
+    .swatch { height:85px; }
+    .thread-info { padding:6px 8px; }
+    .thread-info .number { font-size:13px; }
+    .thread-info .name { font-size:10px; }
+    .controls input[type="text"] { width:140px; }
+    .modal .swatch-large { height:140px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🧵 レース糸 在庫管理</h1>
+  <div class="controls">
+    <input type="text" id="search" placeholder="色番号・色名で検索...">
+    <select id="filterOwned">
+      <option value="all">すべて表示</option>
+      <option value="owned">持っている糸のみ</option>
+      <option value="not-owned">持っていない糸のみ</option>
+    </select>
+    <button onclick="toggleAddForm()">+ 糸を追加</button>
+    <button onclick="exportData()">💾 保存</button>
+    <label style="font-size:13px;cursor:pointer;background:#fff;padding:6px 12px;border-radius:6px;border:1px solid var(--border);">
+      <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+      📂 読み込み
+    </label>
+  </div>
+  <div class="filter-pills" id="brandPills"></div>
+</header>
+<div class="stats-bar" id="statsBar"></div>
+
+<main>
+  <div class="add-form" id="addForm">
+    <h3>新しい糸を追加</h3>
+    <div class="form-row">
+      <select id="addBrand">
+        <option value="olympus_kinpyo">オリムパス金票40番</option>
+        <option value="daruma_murasaki">ダルマ紫野</option>
+        <option value="olympus_tatting">オリムパス タティング(中)</option>
+        <option value="olympus_tatting_lame">オリムパス タティング(ラメ)</option>
+        <option value="lizbeth_tatting">リズベス タティング</option>
+        <option value="lizbeth_20">リズベス 20番</option>
+        <option value="other">その他</option>
+      </select>
+      <input type="text" id="addNumber" placeholder="色番号">
+      <input type="text" id="addName" placeholder="色名">
+      <input type="color" id="addColor" value="#cccccc">
+      <button onclick="addThread()" style="background:var(--accent);color:#fff;border:none;">追加</button>
+    </div>
+  </div>
+  <div id="content"></div>
+</main>
+
+<div class="modal-overlay" id="modal" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="swatch-large" id="modalSwatch"></div>
+    <h3 id="modalTitle"></h3>
+    <div class="detail">ブランド: <span id="modalBrand"></span></div>
+    <div class="detail">色番号: <span id="modalNumber"></span></div>
+    <div class="detail">色名: <span id="modalName"></span></div>
+    <div class="detail">状態: <span id="modalStatus"></span></div>
+    <div id="modalLink"></div>
+    <div class="btn-row">
+      <button class="btn-primary" id="modalToggle" onclick="toggleOwned()"></button>
+      <button class="btn-danger" onclick="deleteThread()">削除</button>
+      <button class="btn-close" onclick="closeModal()">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const BRANDS = {
+  olympus_kinpyo: { name:'オリムパス金票40番', short:'金票40' },
+  daruma_murasaki: { name:'ダルマ紫野', short:'紫野' },
+  olympus_tatting: { name:'オリムパス タティングレース糸(中)', short:'タティング中' },
+  olympus_tatting_lame: { name:'オリムパス タティングレース糸(ラメ)', short:'タティングラメ' },
+  lizbeth_tatting: { name:'リズベス タティングレース糸', short:'リズベスT' },
+  lizbeth_20: { name:'リズベス 20番', short:'リズベス20' },
+};
+
+// Olympus Kinpyo #40 image hashes (from official site)
+const OLY_KINPYO_IMG = {
+  '801':'5f55e99a17a8b5c29be69bbc655ddfa6e0991c2c','802':'8cfe48c1142240e98cc231b1dd3fad5001f63fde',
+  '852':'66dbfe822201482348c603aa98c0e5c5901bd5b6','731':'2668c93de553eba9dd8649501d643c0aacc8b9ee',
+  '741':'3c51d52b7b874ed17659ebcbb9579015ad5c359a','813':'e7dcd3e54556acc29faee4e0869e8055eeacceb6',
+  '736':'8a62a6b50a27aa01ef8e8207618a90dde385e97e','815':'5227243ece0845e10b06771ed4c18abbfcbbbb4e',
+  '455':'c47453012d6a74fb8e2f9fb8ace8923144c10f0b','779':'99dae13bd3d9c34ce84e5d1cefeb172dd1cd958c',
+  '901':'c02cd35b34572c9d2845ba35cb8a05a06d707cbe','810':'e3d22b65ff4728e105edab995683cd97945b4458',
+  '520':'27bf967f84baab2fb67dda094d19fff1079e3e8e','101':'ed39ffa5df6618479be173342b05c20833a867e4',
+  '102':'a8d102c24ef4b648c68957ae18f84ff8dff3530b','672':'9c63c9a86f5b63dc00ae52bd4a8c175c9ef7fe5d',
+  '361':'f653303c2dd751e843ec8c83a795bef6d10f27eb','364':'8e95a5612582a8b912722bcabca03fa2d4ffd1d3',
+  '383':'543224813dfeac2711de0eacb62fd53319aa7a11','221':'2fe1d254a2fe328fc237e2011da7531742e36b60',
+  '293':'d5e3008cc8cde0a443735183ad03c0ac19b4fa58','228':'7bb6836515026b8d99e23467309393a69a246a1d',
+  '503':'7216017da79e33a0077fb27ebccf43c3febe0515','521':'71d39b4c6fdf683b5913e631a209254f6a3a07c0',
+  '541':'59d325fbb34c2c05b05a080bed60f2c074eb65fa','733':'047b3500c24e209945615968711fdbf90cf040c1',
+  '171':'030233d1d7d42c0aaa605c57e7b5f4d5ead1fb00','104':'799f161b8fffdc492d8360bc36f7854e6eb50459',
+  '700':'010a8081a5eefd9841ba0357707b8cd9beff203a','192':'29126f0e15013e922d7654a7f0cdad03a9ec7916',
+  '194':'99e4216e7c512109c36044cec8c8cd1f0183adfc','121':'ee936f32e140e44af42754254e484bc2e3bc8b7a',
+  '154':'32d74a1af5d68f18eeaf167ac808dc6c6fe1ec98','654':'c2be0783e19dd4903ca4c19119e9cd4a1394322e',
+  '366':'128f3ec41c09278ea1476e47a421226417f75a5f','232':'97c40ede91ba7669314a54565089990028d8bc44',
+  '257':'4fd121c108920c82da4e90ff8029c3f0cb049066','325':'fdee208057fb382ffacd0c8110178434f5801b2f',
+  '335':'a0ef14af333a82aa0f7945add00c8e45a51c6a24','165':'64e66c4445eab1fea3bda9ed235c7cebbe03f15a',
+  '244':'e426f00a386534311c0854f89c60aa954e6ec667','283':'3a49012029ed9896714e877b5c8d7f0c200cb820',
+  '289':'384dff492c54376e8c4d33530cf96f931853361f','342':'e673267fb59cd04a0a822466f043c0d5898e47a9',
+  '343':'bc36e3721ea5a5391217ae19d42a5ef636c0cd16','484':'ef03ec8a665d66c8168d0b4fb0f0b737155c6a74',
+  '486':'84a8d65398cc67b90866e879de67d635b95db56b','582':'20e0c8d0b390d902487a19ccb47a84bda68be265',
+  '656':'b6f2e196d66be3c87e34cd863f28abbfe9846285','144':'649d5207f1e55f05e727e0e1d8462eef0bb064aa',
+  '190':'8aa54cb540d076ca0b5a2d992e5444d756fbb47a','284':'5a19b8269a32afaa1c10ffe25663544b8f4d655a',
+  '340':'3737f8308928ff736706b05277a320254cac4469','358':'77c9f00518f153a1085ed090b164597adb8bf1ab',
+  '769':'21f81f511e3db5c0fc78dd061c1f4519d220ed96','110':'5e7fcff9885f6543b185c78d177d05d9ab85bf95',
+  '137':'fecd12f4c9db39905e1423126e08e9c4ce1cba16','202':'491f6c6c4357f54d733eb7abd22ab9a05a63963c',
+  '290':'6fe166fc8e6a813ffc4366ed788426a3f57fd5ef','310':'a0c5743d8ec65f5cd1b0d38c2aa2774e827b2f11',
+  '333':'f913ee7ec1be7adde2b8b7276a87cd33842c8a78','126':'46994e9b3b57888a66196f706c976658154058cc',
+  '132':'339ca4bdfcd9424e43a992a690c1442258612761','134':'cc20dc7d4a3efb02966e071db82beced36080f18',
+  '254':'d92791aed423cbf8af9dd1c0cc380f2d2c8f5c1d','307':'76e6fc1c7eb4b3f4e5b779f6d13a010bab1397d9',
+  '519':'b6b3904d081ea73ff5de6c7fe667b4b80a263f2b',
+};
+
+// Olympus Tatting Medium hashes
+const OLY_TAT_IMG = {
+  'T201':'deea2a0ef6e79f7ac8a6286aa8c1b4595e201b50','T202':'cf18c411c1595bc45e76e8397f4d2ecc2ab37ab3',
+  'T203':'8fcf60222a41632458e9b59001ec0717114d98c2','T204':'84715779a051c6ab8eaf786f0cde31dba2e8cbd0',
+  'T205':'0a6bcafcee9b94df74126608c1e23fb56dc587fc','T206':'a82de8e35e041c1e48b994bc834bf5cbaa69dcce',
+  'T207':'07779fd4777045fdb3e4dcb6ae4c50ca437a329e','T208':'75abca9e45469c413a296ab4c6a576e8d5c2275f',
+  'T209':'4dc7c3798cbef6e792d6794404959631342efaeb','T210':'893ab3405171a3dfb87ba28779dd00bc6e72591b',
+  'T211':'53adef8397f31e34958dd50558a011e141ffe15f','T212':'1db1dc2cfbef140ccbfee80f2eaf3707f3d2a1f1',
+  'T213':'2ae0626b8bb6ced54e11345d1954863d279bc7f1','T214':'4c53247772034d8a1a4f102c26006aea9cbd721a',
+  'T215':'dad813f11513a4a94aa4070b8938d57aa33df48f','T216':'89a168102c649309e55639d87e4109b5909c6075',
+  'T217':'260dd6f3f7f9bc0ecbe458a748b5d739acb00325','T218':'419aa364b4440b2db4a73fb8bd4200eb1f3f204b',
+  'T219':'ee09aa7b760782553bc6c80f88a4cff44b8c009d','T220':'b0c7ee8b4eaee1893b3a4dbe69f0417397ed7793',
+  'T221':'235d897e411c56003dfdcdd4851d0b8e94f9600f','T222':'6c84b54030f81ba3000bc1e26cd0d0d4ec205d06',
+  'T223':'b0fde337855a0b116c6da276058307e08f129b35',
+};
+
+// Olympus Tatting Lame hashes
+const OLY_LAME_IMG = {
+  'T401':'80c2e9f251897e8829077e7c0ac75ac2fe9f2be0','T402':'c42cd054e43660ccdf1d3b833e38b12c818b7c6e',
+  'T403':'5e62d36e4253e21999555746448e5bfb91242ebd','T404':'488805e0e2f53924e21db84c9326938260cfbc1b',
+  'T405':'59c959314a5c6d95a62a4c4006b2370b21a5d470','T406':'9dbc5d5f057ce61aa329897114134122684dd6bf',
+  'T407':'c855ee71db20da930ba3b790668e2aa37575650b','T408':'ca4d1628ba65db5d4f6ae06d0e71ef0dc3b48db9',
+  'T409':'7f38d3507c8d87c2a2a25c675fc2356b31a82029','T410':'b9cd27befeb96730efef0961f8bd86a92be6ff6b',
+  'T411':'70127a6a7e93ae61dbe893e306deb04799051f1c','T412':'c0412c483800f58ef4d407c82cd1e38e9a5a818f',
+  'T413':'8731685ce964175cf851deb9ea350fae1603da22','T414':'915de3da41b28e52475e02c1249d3aba9d86d68f',
+  'T415':'130edb3343f07afa97068d536eb7085b7be7edee','T416':'b43cb513dfa1f1ec8f6be9a57f828acec9435160',
+  'T417':'5712fcca32dcb15a70f5e9b95df0c217fa5a42b9','T418':'435f7917b5ee342efe976a758427398d977119c3',
+  'T419':'4ad17c7e6e05fb5a4a55829349714b98184146ea','T420':'fba63ffd423b4bd02c1d545e36388c026b9de5b0',
+};
+
+function getImageUrl(thread) {
+  const b = thread.brand, n = thread.number;
+  if (b === 'olympus_kinpyo' && OLY_KINPYO_IMG[n]) {
+    return `https://www.olympus-thread.com/datas/images/2020/12/15/${OLY_KINPYO_IMG[n]}.jpg`;
+  }
+  if (b === 'olympus_tatting' && OLY_TAT_IMG[n]) {
+    return `https://www.olympus-thread.com/datas/images/2020/04/20/${OLY_TAT_IMG[n]}.jpg`;
+  }
+  if (b === 'olympus_tatting_lame' && OLY_LAME_IMG[n]) {
+    return `https://www.olympus-thread.com/datas/images/2020/04/20/${OLY_LAME_IMG[n]}.jpg`;
+  }
+  if (b === 'daruma_murasaki') {
+    const num = parseInt(n);
+    if (num >= 1 && num <= 18) {
+      return `https://www.daruma-ito.co.jp/products/img/01-2340-${String(num).padStart(4,'0')}.jpg`;
+    }
+  }
+  return null;
+}
+
+function getProductPageUrl(thread) {
+  const b = thread.brand;
+  if (b === 'olympus_kinpyo') return 'https://www.olympus-thread.com/lineup/lace_yarn/118/';
+  if (b === 'daruma_murasaki') return 'https://www.daruma-ito.co.jp/products/01-2340S.php';
+  if (b === 'olympus_tatting') return 'https://www.olympus-thread.com/lineup/tatting_lace_yarn/454/';
+  if (b === 'olympus_tatting_lame') return 'https://www.olympus-thread.com/lineup/tatting_lace_yarn/456/';
+  if (b === 'lizbeth_20' || b === 'lizbeth_tatting') return 'https://hhtatting.com/product-category/threads/lizbeth/';
+  return null;
+}
+
+const DEFAULT_THREADS = [
+  // === オリムパス金票40番 ===
+  {brand:'olympus_kinpyo',number:'101',name:'ペールピンク',hex:'#F4C2D0',owned:false},
+  {brand:'olympus_kinpyo',number:'102',name:'ピンク',hex:'#E87B9E',owned:true},
+  {brand:'olympus_kinpyo',number:'104',name:'ライトチェリーピンク',hex:'#D45C78',owned:false},
+  {brand:'olympus_kinpyo',number:'110',name:'ホワイティピンク',hex:'#F8E0E8',owned:false},
+  {brand:'olympus_kinpyo',number:'121',name:'パープリッシュローズ',hex:'#8B2252',owned:true},
+  {brand:'olympus_kinpyo',number:'126',name:'ダークローズ',hex:'#A0304A',owned:false},
+  {brand:'olympus_kinpyo',number:'132',name:'ライトローズ',hex:'#E898A8',owned:false},
+  {brand:'olympus_kinpyo',number:'134',name:'ソフトローズ',hex:'#DC7088',owned:false},
+  {brand:'olympus_kinpyo',number:'137',name:'パープリッシュレッド',hex:'#A02050',owned:false},
+  {brand:'olympus_kinpyo',number:'144',name:'コーラルレッド',hex:'#E05040',owned:true},
+  {brand:'olympus_kinpyo',number:'154',name:'チェリーピンク',hex:'#D4456A',owned:true},
+  {brand:'olympus_kinpyo',number:'165',name:'アンティークローズ',hex:'#C48B8B',owned:true},
+  {brand:'olympus_kinpyo',number:'171',name:'ビビットオレンジ',hex:'#F07020',owned:true},
+  {brand:'olympus_kinpyo',number:'190',name:'チャイナレッド',hex:'#CC2222',owned:true},
+  {brand:'olympus_kinpyo',number:'192',name:'ストロングレッド',hex:'#B01818',owned:false},
+  {brand:'olympus_kinpyo',number:'194',name:'ディープレッド',hex:'#8B1A1A',owned:true},
+  {brand:'olympus_kinpyo',number:'202',name:'ソフトジェードグリーン',hex:'#90C8B8',owned:false},
+  {brand:'olympus_kinpyo',number:'221',name:'ソフトブルーグリーン',hex:'#6FADA8',owned:true},
+  {brand:'olympus_kinpyo',number:'228',name:'ビビッドイエローグリーン',hex:'#7CCD40',owned:true},
+  {brand:'olympus_kinpyo',number:'232',name:'イエローグリーン',hex:'#4CAD2A',owned:true},
+  {brand:'olympus_kinpyo',number:'244',name:'ミストグリーン',hex:'#8FBC8F',owned:true},
+  {brand:'olympus_kinpyo',number:'254',name:'フォレストグリーン',hex:'#3A7040',owned:false},
+  {brand:'olympus_kinpyo',number:'257',name:'ダークグリーン',hex:'#2E6B2E',owned:true},
+  {brand:'olympus_kinpyo',number:'283',name:'ビビットグリニッシュイエロー',hex:'#ADBD2F',owned:true},
+  {brand:'olympus_kinpyo',number:'284',name:'イエローカーキ',hex:'#8B8B3A',owned:false},
+  {brand:'olympus_kinpyo',number:'289',name:'カーキ',hex:'#7A7A30',owned:false},
+  {brand:'olympus_kinpyo',number:'290',name:'ペールイエローグリーン',hex:'#D0E8A0',owned:false},
+  {brand:'olympus_kinpyo',number:'293',name:'抹茶',hex:'#8B8B3A',owned:true},
+  {brand:'olympus_kinpyo',number:'307',name:'ペールブルー',hex:'#A8C8E8',owned:false},
+  {brand:'olympus_kinpyo',number:'310',name:'ペールベビーブルー',hex:'#C0D8F0',owned:false},
+  {brand:'olympus_kinpyo',number:'325',name:'スカイブルー',hex:'#5CACEE',owned:false},
+  {brand:'olympus_kinpyo',number:'333',name:'マリンブルー',hex:'#2060A0',owned:false},
+  {brand:'olympus_kinpyo',number:'335',name:'ダークパープリッシュブルー',hex:'#4040A0',owned:true},
+  {brand:'olympus_kinpyo',number:'340',name:'ライトグレイッシュブルー',hex:'#A0B8C8',owned:false},
+  {brand:'olympus_kinpyo',number:'342',name:'グリニッシュブルー',hex:'#3A8E8E',owned:true},
+  {brand:'olympus_kinpyo',number:'343',name:'ティールブルー',hex:'#308080',owned:false},
+  {brand:'olympus_kinpyo',number:'358',name:'ロイヤルネービー',hex:'#1C2060',owned:false},
+  {brand:'olympus_kinpyo',number:'361',name:'ペールスカイ',hex:'#B0D4E8',owned:true},
+  {brand:'olympus_kinpyo',number:'364',name:'ペールブルー',hex:'#7EB4D4',owned:true},
+  {brand:'olympus_kinpyo',number:'366',name:'ブライトブルー',hex:'#3070D0',owned:true},
+  {brand:'olympus_kinpyo',number:'383',name:'ライトターコイズブルー',hex:'#50C8D0',owned:false},
+  {brand:'olympus_kinpyo',number:'455',name:'グレイッシュブラウン',hex:'#8B7D6B',owned:true},
+  {brand:'olympus_kinpyo',number:'484',name:'パールグレイ',hex:'#B8B8B8',owned:true},
+  {brand:'olympus_kinpyo',number:'486',name:'ダークグレイ',hex:'#6A6A6A',owned:false},
+  {brand:'olympus_kinpyo',number:'503',name:'ビビッドイエロー',hex:'#FFD700',owned:true},
+  {brand:'olympus_kinpyo',number:'519',name:'ライトイエロー',hex:'#FFF4A0',owned:false},
+  {brand:'olympus_kinpyo',number:'520',name:'レモンイエロー',hex:'#FFF08C',owned:true},
+  {brand:'olympus_kinpyo',number:'521',name:'クリームイエロー',hex:'#FAEAA0',owned:true},
+  {brand:'olympus_kinpyo',number:'541',name:'カナリヤイエロー',hex:'#FFE040',owned:false},
+  {brand:'olympus_kinpyo',number:'582',name:'ゴールドイエロー',hex:'#DAA520',owned:false},
+  {brand:'olympus_kinpyo',number:'654',name:'ビビッドバイオレット',hex:'#8B3A8B',owned:true},
+  {brand:'olympus_kinpyo',number:'656',name:'ディープバイオレット',hex:'#6A2A6A',owned:false},
+  {brand:'olympus_kinpyo',number:'672',name:'ペールライラック',hex:'#D0A0D0',owned:true},
+  {brand:'olympus_kinpyo',number:'700',name:'スカーレット',hex:'#E02020',owned:false},
+  {brand:'olympus_kinpyo',number:'731',name:'アイボリーホワイト',hex:'#FAF5E8',owned:true},
+  {brand:'olympus_kinpyo',number:'733',name:'ダルオレンジ',hex:'#C89050',owned:false},
+  {brand:'olympus_kinpyo',number:'736',name:'ブロンド',hex:'#D4B878',owned:false},
+  {brand:'olympus_kinpyo',number:'741',name:'ブラウンベージュ',hex:'#A08060',owned:false},
+  {brand:'olympus_kinpyo',number:'769',name:'ラセットブラウン',hex:'#7B4030',owned:false},
+  {brand:'olympus_kinpyo',number:'779',name:'ダークブラウン',hex:'#4A2820',owned:false},
+  {brand:'olympus_kinpyo',number:'801',name:'白',hex:'#FFFFFF',owned:false},
+  {brand:'olympus_kinpyo',number:'802',name:'ブライトエクリュ',hex:'#F5F0E0',owned:true},
+  {brand:'olympus_kinpyo',number:'810',name:'ペールオレンジ',hex:'#F0D0B0',owned:false},
+  {brand:'olympus_kinpyo',number:'813',name:'ベージュグレイ',hex:'#C0B0A0',owned:false},
+  {brand:'olympus_kinpyo',number:'815',name:'オリーブグレイ',hex:'#808068',owned:true},
+  {brand:'olympus_kinpyo',number:'852',name:'クリームホワイト',hex:'#FBF8EC',owned:true},
+  {brand:'olympus_kinpyo',number:'901',name:'黒',hex:'#1A1A1A',owned:true},
+
+  // === ダルマ紫野 ===
+  {brand:'daruma_murasaki',number:'1',name:'白',hex:'#FFFFFF',owned:false},
+  {brand:'daruma_murasaki',number:'2',name:'アイボリー',hex:'#FAF0DC',owned:true},
+  {brand:'daruma_murasaki',number:'3',name:'クリーム',hex:'#FFF8DC',owned:false},
+  {brand:'daruma_murasaki',number:'4',name:'サーモンピンク',hex:'#FA8072',owned:false},
+  {brand:'daruma_murasaki',number:'5',name:'ペールピンク',hex:'#F8C8D4',owned:false},
+  {brand:'daruma_murasaki',number:'6',name:'ピンク',hex:'#F4A0B0',owned:true},
+  {brand:'daruma_murasaki',number:'7',name:'フラミンゴ',hex:'#E85878',owned:false},
+  {brand:'daruma_murasaki',number:'8',name:'ペールイエロー',hex:'#FFF4B0',owned:false},
+  {brand:'daruma_murasaki',number:'9',name:'ライム',hex:'#ADCD58',owned:true},
+  {brand:'daruma_murasaki',number:'10',name:'グリーン',hex:'#3CB371',owned:false},
+  {brand:'daruma_murasaki',number:'11',name:'ミント',hex:'#A8E8C8',owned:false},
+  {brand:'daruma_murasaki',number:'12',name:'水色',hex:'#87CEEB',owned:true},
+  {brand:'daruma_murasaki',number:'13',name:'ラベンダー',hex:'#B0A0D8',owned:false},
+  {brand:'daruma_murasaki',number:'14',name:'ライラック',hex:'#C8A2C8',owned:true},
+  {brand:'daruma_murasaki',number:'15',name:'赤',hex:'#CC2020',owned:false},
+  {brand:'daruma_murasaki',number:'16',name:'ぶどう',hex:'#6B3074',owned:true},
+  {brand:'daruma_murasaki',number:'17',name:'うす茶',hex:'#C4A882',owned:false},
+  {brand:'daruma_murasaki',number:'18',name:'黒',hex:'#1A1A1A',owned:false},
+
+  // === オリムパス タティング(中) ===
+  {brand:'olympus_tatting',number:'T201',name:'白',hex:'#FFFFFF',owned:false},
+  {brand:'olympus_tatting',number:'T202',name:'生成り',hex:'#F5F0E0',owned:false},
+  {brand:'olympus_tatting',number:'T203',name:'ベージュ',hex:'#D4C4A8',owned:false},
+  {brand:'olympus_tatting',number:'T204',name:'ブラウン',hex:'#8B6B4A',owned:false},
+  {brand:'olympus_tatting',number:'T205',name:'イエロー',hex:'#F0D860',owned:false},
+  {brand:'olympus_tatting',number:'T206',name:'オレンジ',hex:'#E88030',owned:false},
+  {brand:'olympus_tatting',number:'T207',name:'ピンク',hex:'#E8A0B0',owned:true},
+  {brand:'olympus_tatting',number:'T208',name:'ローズ',hex:'#C06070',owned:false},
+  {brand:'olympus_tatting',number:'T209',name:'レッド',hex:'#CC2020',owned:false},
+  {brand:'olympus_tatting',number:'T210',name:'ライトブルー',hex:'#88B8E0',owned:false},
+  {brand:'olympus_tatting',number:'T211',name:'ブルー',hex:'#4878B0',owned:true},
+  {brand:'olympus_tatting',number:'T212',name:'イエローグリーン',hex:'#88C040',owned:false},
+  {brand:'olympus_tatting',number:'T213',name:'グリーン',hex:'#388840',owned:false},
+  {brand:'olympus_tatting',number:'T214',name:'スカイブルー',hex:'#60A8D8',owned:true},
+  {brand:'olympus_tatting',number:'T215',name:'ダークレッド',hex:'#8B1820',owned:false},
+  {brand:'olympus_tatting',number:'T216',name:'パープル',hex:'#8868A8',owned:true},
+  {brand:'olympus_tatting',number:'T217',name:'ネイビー',hex:'#283878',owned:false},
+  {brand:'olympus_tatting',number:'T218',name:'黒',hex:'#1A1A1A',owned:false},
+  {brand:'olympus_tatting',number:'T219',name:'モカ',hex:'#B09878',owned:true},
+  {brand:'olympus_tatting',number:'T220',name:'コーラル',hex:'#E07060',owned:false},
+  {brand:'olympus_tatting',number:'T221',name:'ミント',hex:'#80D8B0',owned:false},
+  {brand:'olympus_tatting',number:'T222',name:'ラベンダー',hex:'#B898D0',owned:true},
+  {brand:'olympus_tatting',number:'T223',name:'グレー',hex:'#A0A0A0',owned:false},
+
+  // === オリムパス タティング(ラメ) ===
+  {brand:'olympus_tatting_lame',number:'T401',name:'シルバー',hex:'#C0C0D0',owned:true,lame:true},
+  {brand:'olympus_tatting_lame',number:'T402',name:'ラベンダー',hex:'#B898D0',owned:false,lame:true},
+  {brand:'olympus_tatting_lame',number:'T403',name:'ピンク',hex:'#E8A0B8',owned:true,lame:true},
+  {brand:'olympus_tatting_lame',number:'T404',name:'ブルー',hex:'#6090C8',owned:false,lame:true},
+  {brand:'olympus_tatting_lame',number:'T405',name:'グリーン',hex:'#60A870',owned:true,lame:true},
+  {brand:'olympus_tatting_lame',number:'T406',name:'レッド',hex:'#C83030',owned:false,lame:true},
+  {brand:'olympus_tatting_lame',number:'T407',name:'ゴールド',hex:'#D4AA40',owned:false,lame:true},
+  {brand:'olympus_tatting_lame',number:'T408',name:'ライトピンク',hex:'#F0C0C8',owned:false,lame:true},
+  {brand:'olympus_tatting_lame',number:'T409',name:'ライトブルー',hex:'#A0C8E8',owned:false,lame:true},
+  {brand:'olympus_tatting_lame',number:'T410',name:'ベージュ',hex:'#D4B896',owned:true,lame:true},
+  {brand:'olympus_tatting_lame',number:'T411',name:'ブラウン',hex:'#907050',owned:false,lame:true},
+  {brand:'olympus_tatting_lame',number:'T412',name:'ホワイト',hex:'#F0F0F0',owned:true,lame:true},
+  {brand:'olympus_tatting_lame',number:'T413',name:'ブラック',hex:'#2A2A2A',owned:false,lame:true},
+  {brand:'olympus_tatting_lame',number:'T414',name:'パープル',hex:'#7050A0',owned:false,lame:true},
+  {brand:'olympus_tatting_lame',number:'T415',name:'イエローゴールド',hex:'#D4A830',owned:false,lame:true},
+  {brand:'olympus_tatting_lame',number:'T416',name:'ライトコパー',hex:'#C89870',owned:false,lame:true},
+  {brand:'olympus_tatting_lame',number:'T417',name:'アイスブルー',hex:'#B0D8E8',owned:false,lame:true},
+  {brand:'olympus_tatting_lame',number:'T418',name:'ミント',hex:'#90D8B0',owned:false,lame:true},
+  {brand:'olympus_tatting_lame',number:'T419',name:'マルチカラーラメホワイト',hex:'#F0F0F0',owned:false,lame:true},
+  {brand:'olympus_tatting_lame',number:'T420',name:'マルチカラーラメブラック',hex:'#2A2A2A',owned:false,lame:true},
+
+  // === リズベス ===
+  {brand:'lizbeth_20',number:'618',name:'Magenta Dark',hex:'#8B0045',owned:true},
+  {brand:'lizbeth_20',number:'704',name:'Sky Blue Medium',hex:'#6CA6CD',owned:true},
+];
+
+// State
+let threads = [];
+let selectedThread = null;
+let activeBrands = new Set(Object.keys(BRANDS));
+
+function init() {
+  const saved = localStorage.getItem('lace_thread_inventory_v2');
+  if (saved) {
+    try { threads = JSON.parse(saved); } catch(e) { threads = structuredClone(DEFAULT_THREADS); }
+  } else {
+    threads = structuredClone(DEFAULT_THREADS);
+  }
+  renderBrandPills();
+  render();
+}
+
+function save() { localStorage.setItem('lace_thread_inventory_v2', JSON.stringify(threads)); }
+
+function renderBrandPills() {
+  const c = document.getElementById('brandPills');
+  c.innerHTML = '';
+  const all = document.createElement('span');
+  all.className = 'pill' + (activeBrands.size === Object.keys(BRANDS).length ? ' active' : '');
+  all.textContent = 'すべて';
+  all.onclick = () => { activeBrands = activeBrands.size === Object.keys(BRANDS).length ? new Set() : new Set(Object.keys(BRANDS)); renderBrandPills(); render(); };
+  c.appendChild(all);
+  for (const [k,v] of Object.entries(BRANDS)) {
+    const p = document.createElement('span');
+    p.className = 'pill' + (activeBrands.has(k) ? ' active' : '');
+    p.textContent = v.short;
+    p.onclick = () => { activeBrands.has(k) ? activeBrands.delete(k) : activeBrands.add(k); renderBrandPills(); render(); };
+    c.appendChild(p);
+  }
+}
+
+function getFiltered() {
+  const s = document.getElementById('search').value.toLowerCase();
+  const f = document.getElementById('filterOwned').value;
+  return threads.filter(t => {
+    if (!activeBrands.has(t.brand)) return false;
+    if (f === 'owned' && !t.owned) return false;
+    if (f === 'not-owned' && t.owned) return false;
+    if (s) {
+      const txt = (t.number + ' ' + t.name + ' ' + (BRANDS[t.brand]?.name||'')).toLowerCase();
+      if (!txt.includes(s)) return false;
+    }
+    return true;
+  });
+}
+
+function createSwatchContent(t, el) {
+  const imgUrl = getImageUrl(t);
+  if (imgUrl) {
+    const img = document.createElement('img');
+    img.src = imgUrl;
+    img.alt = t.name;
+    img.loading = 'lazy';
+    img.onerror = function() {
+      this.style.display = 'none';
+      const fb = document.createElement('div');
+      fb.className = 'hex-fallback';
+      fb.style.background = t.hex;
+      el.insertBefore(fb, el.firstChild);
+    };
+    el.appendChild(img);
+  } else {
+    const fb = document.createElement('div');
+    fb.className = 'hex-fallback';
+    fb.style.background = t.hex;
+    el.appendChild(fb);
+  }
+}
+
+function render() {
+  const filtered = getFiltered();
+  const container = document.getElementById('content');
+  container.innerHTML = '';
+  const sb = document.getElementById('statsBar');
+  const ownedCnt = threads.filter(t=>t.owned).length;
+  sb.innerHTML = `
+    <div class="stat"><div class="stat-dot" style="background:var(--owned)"></div>持っている: ${ownedCnt}色</div>
+    <div class="stat"><div class="stat-dot" style="background:var(--not-owned)"></div>持っていない: ${threads.length-ownedCnt}色</div>
+    <div class="stat">合計: ${threads.length}色 (表示中: ${filtered.length}色)</div>`;
+
+  const groups = {};
+  for (const t of filtered) { (groups[t.brand] ??= []).push(t); }
+
+  for (const [bk, bts] of Object.entries(groups)) {
+    const sec = document.createElement('div');
+    sec.className = 'brand-section';
+    const bi = BRANDS[bk] || {name:bk};
+    const oc = bts.filter(t=>t.owned).length;
+    sec.innerHTML = `<div class="brand-header"><h2>${bi.name}</h2><span class="count">${oc} / ${bts.length} 所持</span></div>`;
+    const grid = document.createElement('div');
+    grid.className = 'thread-grid';
+
+    for (const t of bts) {
+      const card = document.createElement('div');
+      card.className = 'thread-card' + (t.owned ? '' : ' not-owned');
+      const swatch = document.createElement('div');
+      swatch.className = 'swatch' + (t.lame ? ' lame' : '');
+      swatch.style.background = t.hex;
+      createSwatchContent(t, swatch);
+
+      const badge = document.createElement('div');
+      badge.className = 'owned-badge ' + (t.owned ? 'yes' : 'no');
+      badge.textContent = t.owned ? '✓' : '−';
+      swatch.appendChild(badge);
+
+      const info = document.createElement('div');
+      info.className = 'thread-info';
+      info.innerHTML = `<div class="number">${t.number}</div><div class="name" title="${t.name}">${t.name}</div>`;
+
+      card.appendChild(swatch);
+      card.appendChild(info);
+      card.onclick = () => openModal(t);
+      grid.appendChild(card);
+    }
+    sec.appendChild(grid);
+    container.appendChild(sec);
+  }
+}
+
+function openModal(t) {
+  selectedThread = t;
+  const sw = document.getElementById('modalSwatch');
+  sw.innerHTML = '';
+  sw.style.background = t.hex;
+  const imgUrl = getImageUrl(t);
+  if (imgUrl) {
+    const img = document.createElement('img');
+    img.src = imgUrl;
+    img.alt = t.name;
+    img.onerror = function() { this.style.display = 'none'; };
+    sw.appendChild(img);
+  }
+  document.getElementById('modalTitle').textContent = `${t.number} - ${t.name}`;
+  document.getElementById('modalBrand').textContent = BRANDS[t.brand]?.name || t.brand;
+  document.getElementById('modalNumber').textContent = t.number;
+  document.getElementById('modalName').textContent = t.name;
+  const st = document.getElementById('modalStatus');
+  st.textContent = t.owned ? '✓ 持っている' : '✗ 持っていない';
+  st.style.color = t.owned ? 'var(--owned)' : '#999';
+  document.getElementById('modalToggle').textContent = t.owned ? '持っていないに変更' : '持っているに変更';
+
+  const linkEl = document.getElementById('modalLink');
+  const purl = getProductPageUrl(t);
+  linkEl.innerHTML = purl ? `<a class="product-link" href="${purl}" target="_blank" rel="noopener">🔗 メーカー商品ページを見る</a>` : '';
+
+  document.getElementById('modal').classList.add('active');
+}
+
+function closeModal(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('modal').classList.remove('active');
+  selectedThread = null;
+}
+function toggleOwned() {
+  if (!selectedThread) return;
+  selectedThread.owned = !selectedThread.owned;
+  save(); openModal(selectedThread); render();
+}
+function deleteThread() {
+  if (!selectedThread) return;
+  if (!confirm(`${selectedThread.number} ${selectedThread.name} を削除しますか？`)) return;
+  threads = threads.filter(t=>t!==selectedThread);
+  save(); closeModal(); render();
+}
+function toggleAddForm() { document.getElementById('addForm').classList.toggle('active'); }
+function addThread() {
+  const brand = document.getElementById('addBrand').value;
+  const number = document.getElementById('addNumber').value.trim();
+  const name = document.getElementById('addName').value.trim();
+  const hex = document.getElementById('addColor').value;
+  if (!number) { alert('色番号を入力してください'); return; }
+  threads.push({brand, number, name:name||number, hex, owned:true});
+  save(); render();
+  document.getElementById('addNumber').value = '';
+  document.getElementById('addName').value = '';
+}
+function exportData() {
+  const blob = new Blob([JSON.stringify(threads,null,2)],{type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'lace_thread_inventory.json';
+  a.click(); URL.revokeObjectURL(a.href);
+}
+function importData(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = (ev) => { try { threads=JSON.parse(ev.target.result); save(); render(); alert('読み込みました'); } catch(err) { alert('読み込み失敗'); } };
+  r.readAsText(file); e.target.value='';
+}
+
+document.getElementById('search').addEventListener('input', render);
+document.getElementById('filterOwned').addEventListener('change', render);
+document.addEventListener('keydown', e => { if (e.key==='Escape') closeModal(); });
+init();
+</script>
+</body>
+</html>
